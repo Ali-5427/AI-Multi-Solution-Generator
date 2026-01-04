@@ -109,7 +109,8 @@ Respond with ONLY the JSON, no other text.`
         console.error(`Error with model ${model}:`, error);
         if (model === models[models.length - 1]) {
           // Last model failed
-          alert(`Error generating solutions: ${error.message}`);
+          const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+          alert(`Error generating solutions: ${errorMessage}`);
         }
         // Continue to next model
       }
