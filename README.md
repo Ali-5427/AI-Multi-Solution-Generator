@@ -1,36 +1,114 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🚀 AI Multi-Solution Generator
 
-## Getting Started
+🤖 An intelligent web application that leverages multiple AI models to generate diverse solution approaches for hackathon problems. Built with Next.js, TypeScript, and Tailwind CSS.
 
-First, run the development server:
+## ✨ Features
 
+- **🔄 Multi-Model AI Integration**: Utilizes various AI models including Claude, GPT-4, Gemini, and Llama through OpenRouter API
+- **🎯 Diverse Solution Generation**: Generates 5 different solution approaches for any given problem statement
+- **📊 Detailed Analysis**: Each solution includes:
+  - Creative approach name
+  - Comprehensive description
+  - Key advantages
+  - Implementation complexity (Low/Medium/High)
+  - Time estimates
+  - Required technologies
+- **🎨 Interactive UI**: Expandable solution cards with clean, modern design
+- **⚡ Real-time Processing**: Fallback mechanism tries multiple models if one fails
+
+## 💻 Tech Stack
+
+- **Frontend**: Next.js 16, React 19, TypeScript
+- **Styling**: Tailwind CSS
+- **Icons**: Lucide React
+- **AI API**: OpenRouter (supports multiple AI providers)
+
+## 🚀 Getting Started
+
+### 📋 Prerequisites
+
+- Node.js 18+
+- npm, yarn, pnpm, or bun
+
+### 🔧 Installation
+
+1. Clone the repository:
+```bash
+git clone https://github.com/Ali-5427/AI-Multi-Solution-Generator.git
+cd ai-multi-solution-generator
+```
+
+2. Install dependencies:
+```bash
+npm install
+# or
+yarn install
+# or
+pnpm install
+```
+
+3. Run the development server:
 ```bash
 npm run dev
 # or
 yarn dev
 # or
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+4. Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 📝 Usage
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. ✏️ Enter your hackathon problem statement in the text area
+2. ⚡ Click "Generate 5 Solutions" to get multiple solution approaches
+3. 🔍 Expand each solution card to view detailed advantages and technologies
+4. 🏆 Use the information to plan your hackathon project
 
-## Learn More
+## 🔑 API Configuration
 
-To learn more about Next.js, take a look at the following resources:
+The app uses OpenRouter API for AI model access. The API key is configured in the code for demonstration purposes. For production use, consider:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- Moving API keys to environment variables
+- Implementing proper authentication
+- Adding rate limiting and error handling
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 🏗️ Build & Deploy
 
-## Deploy on Vercel
+### 🔨 Build for Production
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+npm run build
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### ▶️ Start Production Server
+
+```bash
+npm start
+```
+
+### 🚀 Deploy on Vercel
+
+The easiest way to deploy is using Vercel:
+
+1. Push your code to GitHub
+2. Connect your repository to Vercel
+3. Deploy automatically
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Test thoroughly
+5. Submit a pull request
+
+## 📜 License
+
+This project is private and proprietary.
+
+## 🙏 Acknowledgments
+
+- OpenRouter for providing unified AI model access
+- Next.js team for the excellent framework
+- Tailwind CSS for utility-first styling
