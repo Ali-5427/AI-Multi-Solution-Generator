@@ -3,11 +3,20 @@
 import React, { useState } from 'react';
 import { Lightbulb, Zap, Code, Users, DollarSign, Clock, TrendingUp, ChevronDown, ChevronUp } from 'lucide-react';
 
+interface Solution {
+  name: string;
+  description: string;
+  advantages: string[];
+  complexity: string;
+  timeEstimate: string;
+  technologies: string[];
+}
+
 const MultiSolutionSolver = () => {
   const [problem, setProblem] = useState('');
-  const [solutions, setSolutions] = useState([]);
+  const [solutions, setSolutions] = useState<Solution[]>([]);
   const [loading, setLoading] = useState(false);
-  const [expandedSolution, setExpandedSolution] = useState(null);
+  const [expandedSolution, setExpandedSolution] = useState<number | null>(null);
 
   const generateSolutions = async () => {
     if (!problem.trim()) {
@@ -119,7 +128,7 @@ Respond with ONLY the JSON, no other text.`
     setLoading(false);
   };
 
-  const getComplexityColor = (complexity) => {
+  const getComplexityColor = (complexity: string | undefined) => {
     switch(complexity?.toLowerCase()) {
       case 'low': return 'text-green-600 bg-green-50';
       case 'medium': return 'text-yellow-600 bg-yellow-50';
