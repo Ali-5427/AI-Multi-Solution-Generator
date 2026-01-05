@@ -12,10 +12,16 @@ interface Solution {
   technologies: string[];
 }
 
+interface ProblemTwist {
+  label: string;
+  prompt: string;
+}
+
 const MultiSolutionSolver = () => {
   const [problem, setProblem] = useState('');
   const [solutions, setSolutions] = useState<Solution[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingStep, setLoadingStep] = useState('');
   const [expandedSolution, setExpandedSolution] = useState<number | null>(null);
 
   const generateSolutions = async () => {
@@ -31,45 +37,117 @@ const MultiSolutionSolver = () => {
     }
 
     setLoading(true);
+    setLoadingStep('Step 1/3: Generating problem perspectives');
     setSolutions([]);
 
-    const models = [
+    try {
+      // Stage 1: Generate problem twists
+      const twists = await generateProblemTwists(problem, apiKey);
+
+      // Stage 2: Parallel solver calls
+      setLoadingStep('Step 2/3: Exploring multiple models');
+      const candidateSolutions = await generateCandidateSolutions(twists, problem, apiKey);
+
+      // Stage 3: Claude judge to rank and merge
+      setLoadingStep('Step 3/3: Claude ranking solutions');
+      const finalSolutions = await claudeJudge(candidateSolutions, problem, apiKey);
+
+      setSolutions(finalSolutions);
+    } catch (error) {
+      console.error('Error in solution generation pipeline:', error);
+      alert(`Error generating solutions: ${error instanceof Error ? error.message : 'Unknown error occurred'}`);
+    } finally {
+      setLoading(false);
+      setLoadingStep('');
+    }
+  };
+
+  const generateProblemTwists = async (problem: string, apiKey: string): Promise<ProblemTwist[]> => {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'openai/gpt-4o-mini',
+        max_tokens: 600,
+        messages: [{
+          role: 'user',
+          content: `Given this problem statement: "${problem}"
+
+Generate exactly 3 alternative formulations of this problem from different perspectives. Each formulation should approach the problem from a unique angle (e.g., enterprise vs consumer, mobile-first vs web-first, technical vs user-experience focused).
+
+Format your response as valid JSON:
+{
+  "twists": [
+    { "label": "Short label (e.g., 'Enterprise Focus')", "prompt": "Rewritten problem statement from this perspective..." },
+    { "label": "Short label (e.g., 'Mobile-First')", "prompt": "Rewritten problem statement from this perspective..." },
+    { "label": "Short label (e.g., 'UX-Centric')", "prompt": "Rewritten problem statement from this perspective..." }
+  ]
+}
+
+Respond with ONLY the JSON, no other text.`
+        }]
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to generate problem twists: ${response.status}`);
+    }
+
+    const data = await response.json();
+    if (data.error) {
+      throw new Error(`Twist generation error: ${data.error.message}`);
+    }
+
+    const text = data.choices?.[0]?.message?.content;
+    if (!text) {
+      throw new Error('No response from twist generation');
+    }
+
+    const cleanText = text.replace(/```json|```/g, '').trim();
+    const parsed = JSON.parse(cleanText);
+
+    return parsed.twists || [];
+  };
+
+  const generateCandidateSolutions = async (twists: ProblemTwist[], originalProblem: string, apiKey: string): Promise<Solution[]> => {
+    const solverModels = [
       'anthropic/claude-3.5-sonnet',
-      'openai/gpt-4o',
       'openai/gpt-4o-mini',
-      'anthropic/claude-3-haiku',
-      'meta-llama/llama-3.1-405b-instruct',
-      'meta-llama/llama-3.1-70b-instruct',
-      'google/gemini-pro-1.5',
-      'mistralai/mistral-7b-instruct'
+      'deepseek/deepseek-r1:free'
     ];
 
-    for (const model of models) {
-      try {
-        console.log(`Trying model: ${model}`);
+    const allPromises = [];
 
-        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: model,
-            max_tokens: 1000,
-            messages: [{
-              role: 'user',
-              content: `Given this problem statement: "${problem}"
+    // Create all combinations of twists × models
+    for (const twist of twists) {
+      for (const model of solverModels) {
+        allPromises.push(
+          fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${apiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: model,
+              max_tokens: 800,
+              messages: [{
+                role: 'user',
+                content: `Problem perspective: ${twist.label}
+Rewritten problem: "${twist.prompt}"
 
-Generate exactly 5 different solution approaches. For each approach, provide:
+Generate exactly 2 different solution approaches for this specific problem perspective. For each approach, provide:
 1. A creative name for the approach
-2. A detailed description (4-6 sentences explaining the approach thoroughly)
+2. A detailed description (3-4 sentences explaining the approach thoroughly)
 3. Key advantages
 4. Implementation complexity (Low/Medium/High)
 5. Time estimate to build
 6. Main technologies/tools needed
 
-Format your response as valid JSON with this structure:
+Format your response as valid JSON:
 {
   "solutions": [
     {
@@ -84,52 +162,297 @@ Format your response as valid JSON with this structure:
 }
 
 Respond with ONLY the JSON, no other text.`
+              }]
+            })
+          }).then(async (response) => {
+            if (!response.ok) return null;
+
+            const data = await response.json();
+            if (data.error) return null;
+
+            const text = data.choices?.[0]?.message?.content;
+            if (!text) return null;
+
+            try {
+              const cleanText = text.replace(/```json|```/g, '').trim();
+              const parsed = JSON.parse(cleanText);
+              return parsed.solutions || [];
+            } catch {
+              return null;
+            }
+          }).catch(() => null)
+        );
+      }
+    }
+
+    // Wait for all requests to complete
+    const results = await Promise.all(allPromises);
+
+    // Flatten and filter valid solutions
+    const candidateSolutions: Solution[] = [];
+    results.forEach(result => {
+      if (result && Array.isArray(result)) {
+        candidateSolutions.push(...result);
+      }
+    });
+
+    return candidateSolutions;
+  };
+
+  const claudeJudge = async (candidateSolutions: Solution[], originalProblem: string, apiKey: string): Promise<Solution[]> => {
+    if (candidateSolutions.length === 0) {
+      // Fallback: direct Claude call
+      console.log('No candidate solutions, using direct Claude fallback');
+      return await fallbackDirectCall(originalProblem, apiKey);
+    }
+
+    // First try Claude
+    try {
+      console.log('Attempting Claude judge with', candidateSolutions.length, 'candidates');
+      const result = await tryClaudeJudge(candidateSolutions, originalProblem, apiKey);
+      return result;
+    } catch (error) {
+      console.error('Claude judge failed:', error);
+
+      // Always try alternatives when Claude fails (not just 402 errors)
+      console.log('Claude failed, trying alternative judge models...');
+      try {
+        return await fallbackJudgeWithAlternatives(candidateSolutions, originalProblem, apiKey);
+      } catch (fallbackError) {
+        console.error('All judge models failed:', fallbackError);
+        // Return top candidates as final fallback
+        console.log('Using final fallback: returning top candidate solutions');
+        return candidateSolutions.slice(0, 5);
+      }
+    }
+  };
+
+  const fallbackDirectCall = async (originalProblem: string, apiKey: string): Promise<Solution[]> => {
+    const models = ['openai/gpt-4o', 'openai/gpt-4o-mini', 'deepseek/deepseek-r1:free'];
+
+    for (const model of models) {
+      try {
+        console.log(`Trying fallback model: ${model}`);
+        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: model,
+            max_tokens: 1000,
+            messages: [{
+              role: 'user',
+              content: `Given this problem statement: "${originalProblem}"
+
+Generate exactly 5 different solution approaches. For each approach, provide:
+1. A creative name for the approach
+2. A detailed description (4-6 sentences explaining the approach thoroughly)
+3. Key advantages
+4. Implementation complexity (Low/Medium/High)
+5. Time estimate to build
+6. Main technologies/tools needed
+
+Format your response as valid JSON:
+{
+  "solutions": [...]
+}
+
+Respond with ONLY the JSON, no other text.`
             }]
           })
         });
 
         if (!response.ok) {
           if (response.status === 402) {
-            console.log(`Model ${model} failed with payment error, trying next model...`);
+            console.log(`${model} failed with payment error, trying next model...`);
             continue;
           }
-          throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+          throw new Error(`${model} failed: ${response.status}`);
         }
 
         const data = await response.json();
-
         if (data.error) {
-          console.log(`Model ${model} returned error: ${data.error.message}, trying next model...`);
+          console.log(`${model} returned error: ${data.error.message}, trying next model...`);
           continue;
         }
 
         const text = data.choices?.[0]?.message?.content;
+        if (!text) continue;
 
-        if (!text) {
-          console.log(`Model ${model} returned invalid response format, trying next model...`);
-          continue;
-        }
-
-        // Clean up the response
         const cleanText = text.replace(/```json|```/g, '').trim();
         const parsed = JSON.parse(cleanText);
 
-        console.log(`Successfully used model: ${model}`);
-        setSolutions(parsed.solutions || []);
-        return; // Success, exit the loop
-
+        console.log(`Successfully used fallback model: ${model}`);
+        return parsed.solutions || [];
       } catch (error) {
-        console.error(`Error with model ${model}:`, error);
-        if (model === models[models.length - 1]) {
-          // Last model failed
-          const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-          alert(`Error generating solutions: ${errorMessage}`);
-        }
-        // Continue to next model
+        console.error(`Error with ${model}:`, error);
       }
     }
 
-    setLoading(false);
+    throw new Error('All fallback models failed. Please check your OpenRouter credits.');
+  };
+
+  const tryClaudeJudge = async (candidateSolutions: Solution[], originalProblem: string, apiKey: string): Promise<Solution[]> => {
+    // Compress candidate solutions for Claude
+    const compressedCandidates = candidateSolutions.map((sol, index) => ({
+      id: index + 1,
+      name: sol.name,
+      summary: sol.description.substring(0, 100) + '...',
+      complexity: sol.complexity,
+      twist: `Perspective ${Math.floor(index / 6) + 1}` // Rough grouping by twist
+    }));
+
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'anthropic/claude-3.5-sonnet',
+        max_tokens: 1200,
+        messages: [{
+          role: 'user',
+          content: `Original problem: "${originalProblem}"
+
+I have these candidate solutions from multiple AI models exploring different problem perspectives:
+
+${compressedCandidates.map(c => `${c.id}. ${c.name} (${c.complexity}): ${c.summary}`).join('\n')}
+
+Your task: Rank, merge, and refine these ideas to create exactly 5 high-quality final solutions. Remove duplicates, combine complementary ideas, and ensure diversity.
+
+For each final solution, provide:
+1. A creative name
+2. A detailed description (4-6 sentences)
+3. Key advantages (2-3 points)
+4. Implementation complexity (Low/Medium/High)
+5. Time estimate
+6. Main technologies/tools
+
+Format your response as valid JSON:
+{
+  "solutions": [
+    {
+      "name": "Solution Name",
+      "description": "Detailed description...",
+      "advantages": ["advantage1", "advantage2"],
+      "complexity": "Medium",
+      "timeEstimate": "2-3 days",
+      "technologies": ["tech1", "tech2"]
+    }
+  ]
+}
+
+Respond with ONLY the JSON, no other text.`
+        }]
+      })
+    });
+
+    if (!response.ok) {
+      if (response.status === 402) {
+        throw new Error(`Claude judge failed: 402 (Payment Required - insufficient OpenRouter credits)`);
+      }
+      throw new Error(`Claude judge failed: ${response.status}`);
+    }
+
+    const data = await response.json();
+    if (data.error) {
+      throw new Error(`Claude judge error: ${data.error.message}`);
+    }
+
+    const text = data.choices?.[0]?.message?.content;
+    if (!text) {
+      throw new Error('No Claude judge response');
+    }
+
+    try {
+      const cleanText = text.replace(/```json|```/g, '').trim();
+      const parsed = JSON.parse(cleanText);
+      return parsed.solutions || [];
+    } catch (error) {
+      console.error('Failed to parse Claude judge response:', error);
+      // Return original candidates if parsing fails
+      return candidateSolutions.slice(0, 5);
+    }
+  };
+
+  const fallbackJudgeWithAlternatives = async (candidateSolutions: Solution[], originalProblem: string, apiKey: string): Promise<Solution[]> => {
+    const alternativeModels = ['openai/gpt-4o', 'deepseek/deepseek-r1:free'];
+
+    for (const model of alternativeModels) {
+      try {
+        console.log(`Trying alternative judge model: ${model}`);
+
+        // Compress candidates for the alternative model
+        const compressedCandidates = candidateSolutions.map((sol, index) => ({
+          id: index + 1,
+          name: sol.name,
+          summary: sol.description.substring(0, 80) + '...',
+          complexity: sol.complexity
+        }));
+
+        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: model,
+            max_tokens: 1000,
+            messages: [{
+              role: 'user',
+              content: `Original problem: "${originalProblem}"
+
+I have these candidate solutions from multiple AI models. Select and refine the best 5:
+
+${compressedCandidates.map(c => `${c.id}. ${c.name} (${c.complexity}): ${c.summary}`).join('\n')}
+
+Create exactly 5 final solutions by selecting the best ideas and combining complementary approaches.
+
+Format your response as valid JSON:
+{
+  "solutions": [...]
+}
+
+Respond with ONLY the JSON, no other text.`
+            }]
+          })
+        });
+
+        if (!response.ok) {
+          if (response.status === 402) {
+            console.log(`${model} also failed with payment error, trying next...`);
+            continue;
+          }
+          throw new Error(`${model} failed: ${response.status}`);
+        }
+
+        const data = await response.json();
+        if (data.error) continue;
+
+        const text = data.choices?.[0]?.message?.content;
+        if (!text) continue;
+
+        try {
+          const cleanText = text.replace(/```json|```/g, '').trim();
+          const parsed = JSON.parse(cleanText);
+
+          console.log(`Successfully used alternative judge: ${model}`);
+          return parsed.solutions || [];
+        } catch {
+          continue;
+        }
+      } catch (error) {
+        console.error(`Error with alternative judge ${model}:`, error);
+      }
+    }
+
+    // If all alternatives fail, return the best candidates
+    console.log('All judge models failed, returning top candidates');
+    return candidateSolutions.slice(0, 5);
   };
 
   const getComplexityColor = (complexity: string | undefined) => {
@@ -157,6 +480,16 @@ Respond with ONLY the JSON, no other text.`
           <p className="text-gray-600 text-lg">
             Enter your hackathon problem and get 5 different solution approaches instantly
           </p>
+          {loading && loadingStep && (
+            <p className="text-purple-600 text-sm mt-2 font-medium">
+              {loadingStep}
+            </p>
+          )}
+          {solutions.length > 0 && (
+            <p className="text-purple-600 text-sm mt-2">
+              Final solutions synthesized by Claude using multiple models and twisted problem statements
+            </p>
+          )}
         </div>
 
         {/* Input Section */}
