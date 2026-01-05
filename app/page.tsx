@@ -24,6 +24,12 @@ const MultiSolutionSolver = () => {
       return;
     }
 
+    const apiKey = process.env.NEXT_PUBLIC_OPENROUTER_API_KEY;
+    if (!apiKey) {
+      alert('OpenRouter API key is not configured. Please add NEXT_PUBLIC_OPENROUTER_API_KEY to your .env.local file.');
+      return;
+    }
+
     setLoading(true);
     setSolutions([]);
 
@@ -37,8 +43,6 @@ const MultiSolutionSolver = () => {
       'google/gemini-pro-1.5',
       'mistralai/mistral-7b-instruct'
     ];
-
-    const apiKey = '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';
 
     for (const model of models) {
       try {
